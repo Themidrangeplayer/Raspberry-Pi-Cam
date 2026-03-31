@@ -1,0 +1,7 @@
+picamera2>=0.3.12
+numpy>=1.23.0
+Pillow>=9.0.0
+RPi.GPIO>=0.7.1
+smbus2>=0.4.2
+spidev>=3.6
+opencv-python-headless>=4.7.0
