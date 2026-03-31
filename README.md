@@ -8,6 +8,36 @@ a software stub so you can develop and test on any machine.
 
 ---
 
+## What is this?
+
+Raspberry-Pi-Cam turns a Raspberry Pi into a **manual camera controller** similar
+to a DSLR camera body.  You connect a lens with a motorised focus actuator (or any
+stepper/DC motor), point the camera, and get a live preview window on your Pi's
+desktop with full manual controls:
+
+- **Exposure** – set shutter speed, ISO, and EV compensation individually.
+- **White balance** – choose a preset (daylight, tungsten, etc.) or dial in an exact
+  colour temperature in Kelvin.
+- **Image processing** – apply creative colour matrices (Vivid, Cool, Warm) and
+  tone curves (S-Curve contrast boost) in real time.
+- **Autofocus** – a contrast-detection (CDAF) algorithm drives a physical lens motor
+  to the sharpest focus position.  Supports single-shot AF (AF-S), continuous AF
+  (AF-C), and fully manual focus via keyboard.
+- **Shooting modes** – single capture, Auto Exposure Bracketing (AEB) for HDR
+  photography, and a time-lapse intervalometer.
+- **Visual aids** – live RGB histogram, focus peaking overlay, 3× digital punch-in
+  magnifier, and composition guides (rule of thirds, centre cross, diagonal).
+
+The application is designed so that **no hardware is required to develop or test it**:
+it ships with software stubs for both the camera (generates a synthetic gradient
+frame) and the motor driver, so you can run and iterate on a laptop or desktop
+without any Raspberry Pi attached.
+
+See [`docs/architecture.md`](docs/architecture.md) for a detailed description of
+how the modules fit together.
+
+---
+
 ## Features
 
 ### Core Exposure Control
