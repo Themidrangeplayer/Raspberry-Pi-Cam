@@ -32,7 +32,6 @@ from camera.exposure import (
     ISO_VALUES,
     all_shutter_labels,
     ev_label,
-    ev_steps,
     iso_label,
     shutter_label,
     shutter_to_us,
@@ -54,7 +53,7 @@ from ui.overlays import (
 from ui.widgets import (
     BG, BG_PANEL, BORDER, FG, FG_DIM, FONT_LABEL, FONT_SMALL, FONT_TITLE,
     FONT_VALUE, ACCENT,
-    CycleButton, LabeledSlider, SectionHeader, SettingRow, configure_styles,
+    CycleButton, LabeledSlider, SettingRow, configure_styles,
 )
 
 logger = logging.getLogger(__name__)
@@ -150,48 +149,53 @@ class CameraApp(tk.Tk):
         )
         status.pack(fill="x", pady=(2, 0))
 
-        # Right: control panel (scrollable)
+        # Right: tabbed control panel
         panel_outer = tk.Frame(main, bg=BG_PANEL, width=PANEL_W)
         panel_outer.pack(side="right", fill="y")
         panel_outer.pack_propagate(False)
 
-        canvas_scroll = tk.Canvas(panel_outer, bg=BG_PANEL, highlightthickness=0, width=PANEL_W)
-        scrollbar = ttk.Scrollbar(panel_outer, orient="vertical", command=canvas_scroll.yview)
-        canvas_scroll.configure(yscrollcommand=scrollbar.set)
-        scrollbar.pack(side="right", fill="y")
-        canvas_scroll.pack(side="left", fill="both", expand=True)
-
-        self._panel = ttk.Frame(canvas_scroll, style="Panel.TFrame", padding=4)
-        canvas_scroll.create_window((0, 0), window=self._panel, anchor="nw")
-        self._panel.bind(
-            "<Configure>",
-            lambda e: canvas_scroll.configure(scrollregion=canvas_scroll.bbox("all")),
-        )
-        # Mouse-wheel scroll
-        canvas_scroll.bind_all(
-            "<MouseWheel>",
-            lambda e: canvas_scroll.yview_scroll(-1 * (e.delta // 120), "units"),
-        )
+        self._notebook = ttk.Notebook(panel_outer)
+        self._notebook.pack(fill="both", expand=True)
 
         self._build_panel()
 
-    def _build_panel(self) -> None:
-        p = self._panel
+    # ------------------------------------------------------------------
+    # Tab helpers
+    # ------------------------------------------------------------------
 
-        # ---- Capture button ----
+    def _make_tab(self, title: str) -> ttk.Frame:
+        """Create a new notebook tab and return its content frame."""
+        tab = ttk.Frame(self._notebook, style="Panel.TFrame", padding=4)
+        self._notebook.add(tab, text=title)
+        return tab
+
+    def _build_panel(self) -> None:
+        # ---- Tab 1: Capture ----
+        t_cap = self._make_tab("Capture")
         ttk.Button(
-            p, text="⏺  CAPTURE", style="Accent.TButton",
+            t_cap, text="⏺  CAPTURE", style="Accent.TButton",
             command=self._capture,
         ).pack(fill="x", pady=(0, 6))
+        ttk.Label(t_cap, text="RAW Capture", style="Panel.TLabel").pack(anchor="w", padx=4)
+        self._raw_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            t_cap, text="Enable DNG", variable=self._raw_var,
+            command=lambda: setattr(self._cam, "capture_raw", self._raw_var.get()),
+        ).pack(anchor="w", padx=8)
+        ttk.Label(
+            t_cap,
+            text="Shortcuts: Space=capture  F=AF\n←/→=focus ±1  Shift+←/→=±10",
+            style="Dim.TLabel",
+        ).pack(anchor="w", padx=4, pady=(8, 0))
 
-        # ---- Exposure section ----
-        SectionHeader(p, "Exposure").pack(fill="x", pady=(4, 0))
+        # ---- Tab 2: Exposure ----
+        t_exp = self._make_tab("Exposure")
 
         shutter_labels = all_shutter_labels()
-        self._shutter_row = SettingRow(p, "Shutter", shutter_label(self._cam.shutter_us))
+        self._shutter_row = SettingRow(t_exp, "Shutter", shutter_label(self._cam.shutter_us))
         self._shutter_row.pack(fill="x")
         shutter_ctrl = ttk.Combobox(
-            p, values=shutter_labels, state="readonly", width=14,
+            t_exp, values=shutter_labels, state="readonly", width=14,
             font=FONT_SMALL,
         )
         shutter_ctrl.set(shutter_label(self._cam.shutter_us))
@@ -200,73 +204,66 @@ class CameraApp(tk.Tk):
         self._shutter_combo = shutter_ctrl
 
         iso_labels = [iso_label(v) for v in ISO_VALUES]
-        self._iso_row = SettingRow(p, "ISO", iso_label(self._cam.iso))
+        self._iso_row = SettingRow(t_exp, "ISO", iso_label(self._cam.iso))
         self._iso_row.pack(fill="x")
-        iso_ctrl = ttk.Combobox(p, values=iso_labels, state="readonly", width=14, font=FONT_SMALL)
+        iso_ctrl = ttk.Combobox(t_exp, values=iso_labels, state="readonly", width=14, font=FONT_SMALL)
         iso_ctrl.set(iso_label(self._cam.iso))
         iso_ctrl.pack(fill="x", padx=4)
         iso_ctrl.bind("<<ComboboxSelected>>", self._on_iso_change)
 
-        ev_list = [ev_label(v) for v in ev_steps()]
         self._ev_slider = LabeledSlider(
-            p, "EV Comp.", from_=-3.0, to=3.0, initial=self._cam.ev,
+            t_exp, "EV Comp.", from_=-3.0, to=3.0, initial=self._cam.ev,
             resolution=0.3, fmt="{:+.1f}",
             on_change=self._on_ev_change,
         )
         self._ev_slider.pack(fill="x")
 
-        ttk.Label(p, text="RAW Capture", style="Panel.TLabel").pack(anchor="w", padx=4)
-        self._raw_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(
-            p, text="Enable DNG", variable=self._raw_var,
-            command=lambda: setattr(self._cam, "capture_raw", self._raw_var.get()),
-        ).pack(anchor="w", padx=8)
+        # ---- Tab 3: White Balance ----
+        t_wb = self._make_tab("White Bal.")
 
-        # ---- White balance section ----
-        SectionHeader(p, "White Balance").pack(fill="x", pady=(8, 0))
-
-        wb_ctrl = ttk.Combobox(p, values=AWB_LABELS, state="readonly", width=14, font=FONT_SMALL)
+        wb_ctrl = ttk.Combobox(t_wb, values=AWB_LABELS, state="readonly", width=14, font=FONT_SMALL)
         wb_ctrl.set("Auto")
         wb_ctrl.pack(fill="x", padx=4)
         wb_ctrl.bind("<<ComboboxSelected>>", self._on_wb_mode_change)
         self._wb_combo = wb_ctrl
 
         self._kelvin_slider = LabeledSlider(
-            p, "Kelvin", from_=KELVIN_MIN, to=KELVIN_MAX,
+            t_wb, "Kelvin", from_=KELVIN_MIN, to=KELVIN_MAX,
             initial=5500, fmt="{:.0f} K",
             on_change=self._on_kelvin_change,
         )
         self._kelvin_slider.pack(fill="x")
         ttk.Label(
-            p, text="(Active only in Manual WB mode)",
+            t_wb, text="(Active only in Manual WB mode)",
             style="Dim.TLabel",
         ).pack(anchor="w", padx=8)
 
-        # ---- Image Processing section ----
-        SectionHeader(p, "Image Processing").pack(fill="x", pady=(8, 0))
+        # ---- Tab 4: Processing ----
+        t_proc = self._make_tab("Processing")
 
-        ttk.Label(p, text="Colour Matrix", style="Panel.TLabel").pack(anchor="w", padx=4)
+        ttk.Label(t_proc, text="Colour Matrix", style="Panel.TLabel").pack(anchor="w", padx=4)
         self._matrix_combo = ttk.Combobox(
-            p, values=COLOUR_MATRIX_LABELS, state="readonly", width=14, font=FONT_SMALL,
+            t_proc, values=COLOUR_MATRIX_LABELS, state="readonly", width=14, font=FONT_SMALL,
         )
         self._matrix_combo.set("None")
         self._matrix_combo.pack(fill="x", padx=4)
         self._matrix_combo.bind("<<ComboboxSelected>>", self._on_matrix_change)
         self._active_matrix = None
 
-        ttk.Label(p, text="LUT", style="Panel.TLabel").pack(anchor="w", padx=4)
+        ttk.Label(t_proc, text="LUT", style="Panel.TLabel").pack(anchor="w", padx=4)
         self._lut_combo = ttk.Combobox(
-            p, values=LUT_LABELS, state="readonly", width=14, font=FONT_SMALL,
+            t_proc, values=LUT_LABELS, state="readonly", width=14, font=FONT_SMALL,
         )
         self._lut_combo.set("None")
         self._lut_combo.pack(fill="x", padx=4)
         self._lut_combo.bind("<<ComboboxSelected>>", self._on_lut_change)
         self._active_lut = None
 
-        # ---- Shooting Aids section ----
-        SectionHeader(p, "Shooting Aids").pack(fill="x", pady=(8, 0))
+        # ---- Tab 5: Aids ----
+        t_aids = self._make_tab("Aids")
 
-        overlays_frame = ttk.Frame(p, style="Panel.TFrame")
+        ttk.Label(t_aids, text="Composition Overlay", style="Panel.TLabel").pack(anchor="w", padx=4)
+        overlays_frame = ttk.Frame(t_aids, style="Panel.TFrame")
         overlays_frame.pack(fill="x", padx=4)
         self._overlay_var = tk.StringVar(value="None")
         for label in ("None", "Thirds", "Centre", "Diagonal"):
@@ -276,8 +273,8 @@ class CameraApp(tk.Tk):
                 command=self._on_overlay_change,
             ).pack(side="left", padx=2)
 
-        fp_frame = ttk.Frame(p, style="Panel.TFrame")
-        fp_frame.pack(fill="x", padx=4, pady=2)
+        fp_frame = ttk.Frame(t_aids, style="Panel.TFrame")
+        fp_frame.pack(fill="x", padx=4, pady=4)
         self._fp_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(
             fp_frame, text="Focus Peaking", variable=self._fp_var,
@@ -290,41 +287,41 @@ class CameraApp(tk.Tk):
             command=self._on_punchin_toggle,
         ).pack(side="left", padx=8)
 
-        # ---- Drive Modes section ----
-        SectionHeader(p, "Drive Modes").pack(fill="x", pady=(8, 0))
+        # ---- Tab 6: Drive ----
+        t_drive = self._make_tab("Drive")
 
-        # AEB
-        ttk.Label(p, text="AEB bracket  (–1, 0, +1 EV)", style="Panel.TLabel").pack(
+        ttk.Label(t_drive, text="AEB bracket  (–1, 0, +1 EV)", style="Panel.TLabel").pack(
             anchor="w", padx=4,
         )
-        ttk.Button(p, text="Shoot Bracket", command=self._shoot_aeb).pack(
+        ttk.Button(t_drive, text="Shoot Bracket", command=self._shoot_aeb).pack(
             fill="x", padx=4, pady=2,
         )
 
-        # Intervalometer
+        ttk.Separator(t_drive, orient="horizontal").pack(fill="x", pady=6)
+
         self._interval_slider = LabeledSlider(
-            p, "Interval (s)", from_=1, to=60, initial=5, fmt="{:.0f} s",
+            t_drive, "Interval (s)", from_=1, to=60, initial=5, fmt="{:.0f} s",
         )
         self._interval_slider.pack(fill="x")
 
         self._frames_var = tk.IntVar(value=0)
-        ttk.Label(p, text="Total frames (0 = ∞)", style="Panel.TLabel").pack(anchor="w", padx=4)
-        ttk.Entry(p, textvariable=self._frames_var, width=6, font=FONT_SMALL).pack(
+        ttk.Label(t_drive, text="Total frames (0 = ∞)", style="Panel.TLabel").pack(anchor="w", padx=4)
+        ttk.Entry(t_drive, textvariable=self._frames_var, width=6, font=FONT_SMALL).pack(
             anchor="w", padx=8,
         )
 
-        tl_frame = ttk.Frame(p, style="Panel.TFrame")
+        tl_frame = ttk.Frame(t_drive, style="Panel.TFrame")
         tl_frame.pack(fill="x", padx=4, pady=2)
         self._tl_btn = ttk.Button(tl_frame, text="▶ Start Time-lapse", command=self._toggle_timelapse)
         self._tl_btn.pack(fill="x")
         self._tl_count_var = tk.StringVar(value="")
         ttk.Label(tl_frame, textvariable=self._tl_count_var, style="Dim.TLabel").pack(anchor="w")
 
-        # ---- Autofocus section ----
-        SectionHeader(p, "Autofocus").pack(fill="x", pady=(8, 0))
+        # ---- Tab 7: AF ----
+        t_af = self._make_tab("AF")
 
-        # Mode
-        af_mode_frame = ttk.Frame(p, style="Panel.TFrame")
+        ttk.Label(t_af, text="AF Mode", style="Panel.TLabel").pack(anchor="w", padx=4)
+        af_mode_frame = ttk.Frame(t_af, style="Panel.TFrame")
         af_mode_frame.pack(fill="x", padx=4)
         self._af_mode_var = tk.StringVar(value="Manual")
         for label, mode in (("Manual", "Manual"), ("AF-S", "AF-S"), ("AF-C", "AF-C")):
@@ -334,9 +331,8 @@ class CameraApp(tk.Tk):
                 command=self._on_af_mode_change,
             ).pack(side="left", padx=4)
 
-        # Area
-        ttk.Label(p, text="Focus Area", style="Panel.TLabel").pack(anchor="w", padx=4)
-        area_frame = ttk.Frame(p, style="Panel.TFrame")
+        ttk.Label(t_af, text="Focus Area", style="Panel.TLabel").pack(anchor="w", padx=4)
+        area_frame = ttk.Frame(t_af, style="Panel.TFrame")
         area_frame.pack(fill="x", padx=4)
         self._af_area_var = tk.StringVar(value="Wide")
         for label in ("Wide", "Zone", "Single"):
@@ -345,22 +341,20 @@ class CameraApp(tk.Tk):
                 variable=self._af_area_var,
                 command=self._on_af_area_change,
             ).pack(side="left", padx=4)
-        ttk.Label(p, text="(click preview to set point)", style="Dim.TLabel").pack(
+        ttk.Label(t_af, text="(click preview to set point)", style="Dim.TLabel").pack(
             anchor="w", padx=8,
         )
 
-        # AF trigger / status
-        af_btn_frame = ttk.Frame(p, style="Panel.TFrame")
-        af_btn_frame.pack(fill="x", padx=4, pady=2)
+        af_btn_frame = ttk.Frame(t_af, style="Panel.TFrame")
+        af_btn_frame.pack(fill="x", padx=4, pady=4)
         ttk.Button(af_btn_frame, text="AF", command=self._trigger_af).pack(side="left", padx=2)
         ttk.Button(af_btn_frame, text="Home", command=self._home_lens).pack(side="left", padx=2)
 
         self._af_status_var = tk.StringVar(value="")
-        ttk.Label(p, textvariable=self._af_status_var, style="Dim.TLabel").pack(anchor="w", padx=4)
+        ttk.Label(t_af, textvariable=self._af_status_var, style="Dim.TLabel").pack(anchor="w", padx=4)
 
-        # Manual focus
-        ttk.Label(p, text="Manual Focus Step", style="Panel.TLabel").pack(anchor="w", padx=4)
-        mf_frame = ttk.Frame(p, style="Panel.TFrame")
+        ttk.Label(t_af, text="Manual Focus Step", style="Panel.TLabel").pack(anchor="w", padx=4)
+        mf_frame = ttk.Frame(t_af, style="Panel.TFrame")
         mf_frame.pack(fill="x", padx=4, pady=2)
         for delta, label in ((-10, "◀◀"), (-1, "◀"), (+1, "▶"), (+10, "▶▶")):
             ttk.Button(
@@ -369,7 +363,7 @@ class CameraApp(tk.Tk):
             ).pack(side="left", padx=1)
 
         self._mf_pos_var = tk.StringVar(value="Pos: 0")
-        ttk.Label(p, textvariable=self._mf_pos_var, style="Dim.TLabel").pack(anchor="w", padx=4)
+        ttk.Label(t_af, textvariable=self._mf_pos_var, style="Dim.TLabel").pack(anchor="w", padx=4)
 
     # ------------------------------------------------------------------
     # Key bindings

@@ -70,6 +70,20 @@ def configure_styles() -> None:
         "Horizontal.TSeparator",
         background=BORDER,
     )
+    style.configure(
+        "TNotebook",
+        background=BG_PANEL, borderwidth=0, tabmargins=0,
+    )
+    style.configure(
+        "TNotebook.Tab",
+        background=BG_PANEL, foreground=FG_DIM,
+        font=FONT_SMALL, padding=(6, 3),
+    )
+    style.map(
+        "TNotebook.Tab",
+        background=[("selected", BG_ACTIVE)],
+        foreground=[("selected", FG)],
+    )
 
 
 # ---------------------------------------------------------------------------
